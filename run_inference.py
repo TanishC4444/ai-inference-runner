@@ -20,7 +20,6 @@ pipe = pipeline(
     "text-generation",
     model=model_id,
     cache_dir="model_cache",
-    device_map="cpu",
 )
 
 output = pipe(
