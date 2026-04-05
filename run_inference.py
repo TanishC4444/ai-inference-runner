@@ -1,14 +1,19 @@
 
-import os
-import warnings
+import os, urllib.request, warnings
 warnings.filterwarnings("ignore")
-
-from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
-import torch
+from llama_cpp import Llama
 
 MODEL_MAP = {
-    "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "llama":     "meta-llama/Llama-3.2-1B-Instruct",
+    "tinyllama": {
+        "url":      "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        "n_ctx":    2048,
+    },
+    "llama": {
+        "url":      "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "n_ctx":    4096,
+    },
 }
 
 model_key   = os.environ["MODEL"]
@@ -16,52 +21,29 @@ prompt      = os.environ["PROMPT"]
 system      = os.environ.get("SYSTEM", "You are a helpful assistant.")
 max_tokens  = int(os.environ.get("MAX_TOKENS", "512"))
 temperature = float(os.environ.get("TEMPERATURE", "0.7"))
-model_id    = MODEL_MAP[model_key]
 
-print(f"Loading {model_id}...")
+cfg        = MODEL_MAP[model_key]
+model_path = f"model_cache/{cfg['filename']}"
 
-tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="model_cache")
-model     = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    cache_dir="model_cache",
-    dtype=torch.float32,
-    low_cpu_mem_usage=True,
-)
-model.eval()
+if not os.path.exists(model_path):
+    os.makedirs("model_cache", exist_ok=True)
+    print(f"Downloading {cfg['filename']}...")
+    urllib.request.urlretrieve(cfg["url"], model_path)
 
-messages = [
-    {"role": "system", "content": system},
-    {"role": "user",   "content": prompt},
-]
-
-encoded   = tokenizer.apply_chat_template(
-    messages,
-    add_generation_prompt=True,
-    return_tensors="pt",
-    return_dict=True,
-)
-input_ids      = encoded["input_ids"]
-attention_mask = encoded["attention_mask"]
-input_len      = input_ids.shape[-1]
-
-gen_config = GenerationConfig(
-    max_new_tokens=max_tokens,
-    temperature=temperature if temperature > 0 else None,
-    do_sample=temperature > 0,
-    pad_token_id=tokenizer.eos_token_id,
-)
+print(f"Loading {cfg['filename']}...")
+llm = Llama(model_path=model_path, n_ctx=cfg["n_ctx"], n_threads=4, verbose=False)
 
 print("Running inference...")
-with torch.no_grad():
-    output_ids = model.generate(
-        input_ids,
-        attention_mask=attention_mask,
-        generation_config=gen_config,
-    )
+response = llm.create_chat_completion(
+    messages=[
+        {"role": "system", "content": system},
+        {"role": "user",   "content": prompt},
+    ],
+    max_tokens=max_tokens,
+    temperature=temperature,
+)
 
-new_tokens = output_ids[0][input_len:]
-output     = tokenizer.decode(new_tokens, skip_special_tokens=True)
-
+output = response["choices"][0]["message"]["content"]
 print("\n=== OUTPUT ===")
 print(output)
 
