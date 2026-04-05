@@ -1,0 +1,50 @@
+name: AI Inference
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:        { description: "User prompt",      required: true  }
+      system:        { description: "System prompt",    required: false, default: "You are a helpful assistant." }
+      model:         { description: "tinyllama|llama",  required: false, default: "tinyllama" }
+      cache:         { description: "Cache weights",    required: false, default: "true" }
+      max_tokens:    { description: "Max new tokens",   required: false, default: "512" }
+      temperature:   { description: "Temperature",      required: false, default: "0.7" }
+      n_ctx:         { description: "Context length",   required: false, default: "" }
+
+jobs:
+  inference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache model weights
+        if: ${{ inputs.cache == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: model_cache
+          key: gguf-${{ inputs.model }}-v1
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          CMAKE_ARGS="-DGGML_METAL=off" pip install llama-cpp-python
+
+      - name: Run inference
+        env:
+          PROMPT:      ${{ inputs.prompt }}
+          SYSTEM:      ${{ inputs.system }}
+          MODEL:       ${{ inputs.model }}
+          MAX_TOKENS:  ${{ inputs.max_tokens }}
+          TEMPERATURE: ${{ inputs.temperature }}
+          N_CTX:       ${{ inputs.n_ctx }}
+          CACHE:       ${{ inputs.cache }}
+        run: python run_inference.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-output
+          path: output.txt
+          retention-days: 1
