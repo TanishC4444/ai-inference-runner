@@ -20,7 +20,8 @@ prompt      = os.environ["PROMPT"]
 system      = os.environ.get("SYSTEM", "You are a helpful assistant.")
 max_tokens  = int(os.environ.get("MAX_TOKENS", "512"))
 temperature = float(os.environ.get("TEMPERATURE", "0.7"))
-n_ctx       = int(os.environ.get("N_CTX", MODEL_MAP[model_key]["n_ctx"]))
+n_ctx_env = os.environ.get("N_CTX", "").strip()
+n_ctx     = int(n_ctx_env) if n_ctx_env else MODEL_MAP[model_key]["n_ctx"]
 
 cfg        = MODEL_MAP[model_key]
 model_path = f"model_cache/{cfg['filename']}"
