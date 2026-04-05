@@ -29,7 +29,9 @@ jobs:
           key: hf-${{ inputs.model }}-v1
 
       - name: Install dependencies
-        run: pip install transformers torch --index-url https://download.pytorch.org/whl/cpu -q
+        run: |
+          pip install transformers -q
+          pip install torch --index-url https://download.pytorch.org/whl/cpu -q
 
       - name: Run inference
         env:
