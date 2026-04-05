@@ -21,6 +21,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache venv
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-transformers-torch-cpu-v2
+
       - name: Cache model weights
         if: ${{ inputs.cache == 'true' }}
         uses: actions/cache@v4
@@ -29,9 +36,12 @@ jobs:
           key: hf-${{ inputs.model }}-v1
 
       - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          pip install transformers accelerate -q
-          pip install torch --index-url https://download.pytorch.org/whl/cpu -q
+          python -m venv .venv
+          .venv/bin/pip install -q --upgrade pip
+          .venv/bin/pip install -q transformers accelerate
+          .venv/bin/pip install -q torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run inference
         env:
@@ -40,7 +50,9 @@ jobs:
           MODEL:       ${{ inputs.model }}
           MAX_TOKENS:  ${{ inputs.max_tokens }}
           TEMPERATURE: ${{ inputs.temperature }}
-        run: python run_inference.py
+          TRANSFORMERS_VERBOSITY: error
+          HF_DATASETS_OFFLINE: "1"
+        run: .venv/bin/python run_inference.py
 
       - uses: actions/upload-artifact@v4
         with:
