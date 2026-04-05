@@ -24,7 +24,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="model_cache")
 model     = AutoModelForCausalLM.from_pretrained(
     model_id,
     cache_dir="model_cache",
-    torch_dtype=torch.float32,
+    dtype=torch.float32,
     low_cpu_mem_usage=True,
 )
 model.eval()
@@ -34,11 +34,15 @@ messages = [
     {"role": "user",   "content": prompt},
 ]
 
-input_ids = tokenizer.apply_chat_template(
+encoded   = tokenizer.apply_chat_template(
     messages,
     add_generation_prompt=True,
     return_tensors="pt",
+    return_dict=True,
 )
+input_ids      = encoded["input_ids"]
+attention_mask = encoded["attention_mask"]
+input_len      = input_ids.shape[-1]
 
 gen_config = GenerationConfig(
     max_new_tokens=max_tokens,
@@ -49,9 +53,13 @@ gen_config = GenerationConfig(
 
 print("Running inference...")
 with torch.no_grad():
-    output_ids = model.generate(input_ids, generation_config=gen_config)
+    output_ids = model.generate(
+        input_ids,
+        attention_mask=attention_mask,
+        generation_config=gen_config,
+    )
 
-new_tokens = output_ids[0][input_ids.shape[-1]:]
+new_tokens = output_ids[0][input_len:]
 output     = tokenizer.decode(new_tokens, skip_special_tokens=True)
 
 print("\n=== OUTPUT ===")
