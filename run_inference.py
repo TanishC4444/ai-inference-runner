@@ -1,10 +1,14 @@
 
-import os, urllib.request
-from transformers import pipeline
+import os
+import warnings
+warnings.filterwarnings("ignore")
+
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
+import torch
 
 MODEL_MAP = {
     "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "llama":     "bartowski/Llama-3.2-1B-Instruct",
+    "llama":     "meta-llama/Llama-3.2-1B-Instruct",
 }
 
 model_key   = os.environ["MODEL"]
@@ -12,22 +16,43 @@ prompt      = os.environ["PROMPT"]
 system      = os.environ.get("SYSTEM", "You are a helpful assistant.")
 max_tokens  = int(os.environ.get("MAX_TOKENS", "512"))
 temperature = float(os.environ.get("TEMPERATURE", "0.7"))
+model_id    = MODEL_MAP[model_key]
 
-model_id = MODEL_MAP[model_key]
 print(f"Loading {model_id}...")
 
-pipe = pipeline(
-    "text-generation",
-    model=model_id,
+tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="model_cache")
+model     = AutoModelForCausalLM.from_pretrained(
+    model_id,
     cache_dir="model_cache",
+    torch_dtype=torch.float32,
+    low_cpu_mem_usage=True,
+)
+model.eval()
+
+messages = [
+    {"role": "system", "content": system},
+    {"role": "user",   "content": prompt},
+]
+
+input_ids = tokenizer.apply_chat_template(
+    messages,
+    add_generation_prompt=True,
+    return_tensors="pt",
 )
 
-output = pipe(
-    [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+gen_config = GenerationConfig(
     max_new_tokens=max_tokens,
-    temperature=temperature,
+    temperature=temperature if temperature > 0 else None,
     do_sample=temperature > 0,
-)[0]["generated_text"][-1]["content"]
+    pad_token_id=tokenizer.eos_token_id,
+)
+
+print("Running inference...")
+with torch.no_grad():
+    output_ids = model.generate(input_ids, generation_config=gen_config)
+
+new_tokens = output_ids[0][input_ids.shape[-1]:]
+output     = tokenizer.decode(new_tokens, skip_special_tokens=True)
 
 print("\n=== OUTPUT ===")
 print(output)
