@@ -30,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install transformers -q
+          pip install transformers accelerate -q
           pip install torch --index-url https://download.pytorch.org/whl/cpu -q
 
       - name: Run inference
