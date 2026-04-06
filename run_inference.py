@@ -21,8 +21,10 @@ prompt      = os.environ["PROMPT"]
 system      = os.environ.get("SYSTEM", "You are a helpful assistant.")
 max_tokens  = int(os.environ.get("MAX_TOKENS", "512"))
 temperature = float(os.environ.get("TEMPERATURE", "0.7"))
+n_ctx_env   = os.environ.get("N_CTX", "").strip()
 
 cfg        = MODEL_MAP[model_key]
+n_ctx      = int(n_ctx_env) if n_ctx_env else cfg["n_ctx"]
 model_path = f"model_cache/{cfg['filename']}"
 
 if not os.path.exists(model_path):
@@ -30,8 +32,8 @@ if not os.path.exists(model_path):
     print(f"Downloading {cfg['filename']}...")
     urllib.request.urlretrieve(cfg["url"], model_path)
 
-print(f"Loading {cfg['filename']}...")
-llm = Llama(model_path=model_path, n_ctx=cfg["n_ctx"], n_threads=4, verbose=False)
+print(f"Loading {cfg['filename']} (n_ctx={n_ctx})...")
+llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=4, verbose=False)
 
 print("Running inference...")
 response = llm.create_chat_completion(
