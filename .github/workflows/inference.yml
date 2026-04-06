@@ -8,6 +8,7 @@ on:
       cache:       { description: "Cache weights",   required: false, default: "true" }
       max_tokens:  { description: "Max new tokens",  required: false, default: "512" }
       temperature: { description: "Temperature",     required: false, default: "0.7" }
+      n_ctx:       { description: "Context window",  required: false, default: "" }
 
 jobs:
   inference:
@@ -48,6 +49,7 @@ jobs:
           MODEL:       ${{ inputs.model }}
           MAX_TOKENS:  ${{ inputs.max_tokens }}
           TEMPERATURE: ${{ inputs.temperature }}
+          N_CTX:       ${{ inputs.n_ctx }}
         run: .venv/bin/python run_inference.py
 
       - uses: actions/upload-artifact@v4
