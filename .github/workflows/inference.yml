@@ -4,7 +4,7 @@ on:
     inputs:
       prompt:      { description: "User prompt",     required: true  }
       system:      { description: "System prompt",   required: false, default: "You are a helpful assistant." }
-      model:       { description: "tinyllama|llama", required: false, default: "tinyllama" }
+      model:       { description: "Model key",       required: false, default: "tinyllama" }
       cache:       { description: "Cache weights",   required: false, default: "true" }
       max_tokens:  { description: "Max new tokens",  required: false, default: "512" }
       temperature: { description: "Temperature",     required: false, default: "0.7" }
