@@ -14,6 +14,31 @@ MODEL_MAP = {
         "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "n_ctx":    4096,
     },
+
+    # ── ADD NEW MODELS BELOW THIS LINE ──────────────────────────────────────
+    # Keep in sync with MODELS in models.py
+    # ────────────────────────────────────────────────────────────────────────
+
+    "phi3": {
+        "url":      "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+        "filename": "Phi-3.5-mini-instruct-Q4_K_M.gguf",
+        "n_ctx":    4096,
+    },
+    "qwen": {
+        "url":      "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "n_ctx":    4096,
+    },
+    "gemma2": {
+        "url":      "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+        "filename": "gemma-2-2b-it-Q4_K_M.gguf",
+        "n_ctx":    4096,
+    },
+    "deepseek": {
+        "url":      "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        "filename": "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        "n_ctx":    4096,
+    },
 }
 
 model_key   = os.environ["MODEL"]
