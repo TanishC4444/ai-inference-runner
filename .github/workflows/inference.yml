@@ -1,18 +1,23 @@
 name: AI Inference
+run-name: AI inference ${{ inputs.job_id }}-${{ inputs.attempt }}
 on:
   workflow_dispatch:
     inputs:
-      prompt:      { description: "User prompt",     required: true  }
-      system:      { description: "System prompt",   required: false, default: "You are a helpful assistant." }
-      model:       { description: "Model key",       required: false, default: "tinyllama" }
-      cache:       { description: "Cache weights",   required: false, default: "true" }
-      max_tokens:  { description: "Max new tokens",  required: false, default: "512" }
-      temperature: { description: "Temperature",     required: false, default: "0.7" }
-      n_ctx:       { description: "Context window",  required: false, default: "" }
+      job_id:          { description: "Correlation ID", required: true }
+      attempt:         { description: "Attempt number", required: true, default: "1" }
+      prompt:          { description: "User prompt", required: true }
+      system:          { description: "System prompt", required: false, default: "You are a helpful assistant." }
+      backend:         { description: "local or provider", required: true, default: "local" }
+      local_model:     { description: "Local model key", required: false, default: "tinyllama" }
+      cache:           { description: "Cache weights", required: false, default: "true" }
+      config:          { description: "Non-secret inference settings JSON", required: true }
 
 jobs:
   inference:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.config).runner_label }}
+    timeout-minutes: ${{ fromJSON(inputs.config).job_timeout_minutes || 30 }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,36 +29,47 @@ jobs:
 
       - name: Cache venv
         id: cache-venv
+        if: ${{ inputs.backend == 'local' }}
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-llama-cpp-v1
+          key: venv-${{ runner.os }}-${{ runner.arch }}-python311-llama-cpp-v4
 
       - name: Cache model weights
-        if: ${{ inputs.cache == 'true' }}
+        if: ${{ inputs.backend == 'local' && fromJSON(inputs.config).cache_weights }}
         uses: actions/cache@v4
         with:
           path: model_cache
-          key: gguf-${{ inputs.model }}-v1
+          key: gguf-${{ inputs.local_model }}-${{ fromJSON(inputs.config).model_sha256 }}
 
-      - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
+      - name: Install model runtime on GitHub
+        if: ${{ inputs.backend == 'local' && steps.cache-venv.outputs.cache-hit != 'true' }}
         run: |
           python -m venv .venv
-          CMAKE_ARGS="-DGGML_METAL=off" .venv/bin/pip install llama-cpp-python -q
+          .venv/bin/pip install --only-binary=llama-cpp-python             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu             'llama-cpp-python>=0.3.16' -q ||             CMAKE_ARGS="-DGGML_METAL=off" .venv/bin/pip install 'llama-cpp-python>=0.3.16' -q
 
-      - name: Run inference
+      - name: Run inference on GitHub
         env:
-          PROMPT:      ${{ inputs.prompt }}
-          SYSTEM:      ${{ inputs.system }}
-          MODEL:       ${{ inputs.model }}
-          MAX_TOKENS:  ${{ inputs.max_tokens }}
-          TEMPERATURE: ${{ inputs.temperature }}
-          N_CTX:       ${{ inputs.n_ctx }}
-        run: .venv/bin/python run_inference.py
+          JOB_ID:           ${{ inputs.job_id }}
+          ATTEMPT:          ${{ inputs.attempt }}
+          PROMPT:           ${{ inputs.prompt }}
+          SYSTEM:           ${{ inputs.system }}
+          BACKEND:          ${{ inputs.backend }}
+          LOCAL_MODEL:      ${{ inputs.local_model }}
+          CACHE:            ${{ inputs.cache }}
+          CONFIG_JSON:      ${{ inputs.config }}
+          PROVIDER_API_KEY: ${{ inputs.backend == 'provider' && secrets.GH_AI_PROVIDER_API_KEY || '' }}
+        run: |
+          if [ "$BACKEND" = "local" ]; then
+            .venv/bin/python run_inference.py
+          else
+            python run_inference.py
+          fi
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload structured result
+        if: ${{ always() && hashFiles('result.json') != '' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: ai-output
-          path: output.txt
-          retention-days: 1
+          name: ai-output-${{ inputs.job_id }}-${{ inputs.attempt }}
+          path: result.json
+          retention-days: ${{ fromJSON(inputs.config).artifact_retention_days || 3 }}
