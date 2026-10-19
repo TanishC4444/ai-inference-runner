@@ -179,6 +179,28 @@ def local_inference(messages, max_tokens, temperature, local_model, requested_n_
         **config.get("generation_options", {})
     )
 
+def normalize_pipeline(steps, max_prompts=None):
+    """Validate before dispatch; references name earlier outputs, never prompt copies."""
+    if not isinstance(steps, (list, tuple)) or not steps:
+        raise ValueError("steps must be a nonempty list or tuple")
+    if max_prompts is not None and len(steps) > max_prompts:
+        raise ValueError("Pipeline exceeds configured max_prompts")
+    normalized = []
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict) or set(step) - {"agent", "instruction", "inputs"}:
+            raise ValueError("Each step accepts only agent, instruction, and inputs")
+        for name in ("agent", "instruction"):
+            if not isinstance(step.get(name), str) or not step[name].strip():
+                raise ValueError(f"Step {index} needs a nonempty {name}")
+        sources = step.get("inputs", [index - 1] if index else [])
+        if not isinstance(sources, (list, tuple)) or any(
+            type(source) is not int or not 0 <= source < index for source in sources
+        ):
+            raise ValueError(f"Step {index} inputs must reference earlier step indices")
+        normalized.append({"agent": step["agent"], "instruction": step["instruction"],
+                           "inputs": list(dict.fromkeys(sources))})
+    return normalized
+
 
 import re
 from functools import lru_cache
@@ -346,6 +368,44 @@ def run_discussion(agent, initial_messages, inference_config):
         previous = current
     return {"results": results, "usage": usage, "history": []}
 
+
+def run_pipeline(agent, initial_messages, inference_config):
+    policy = dict(DEFAULT_LIMITS)
+    policy.update(inference_config.get("limits", {}))
+    steps = normalize_pipeline(agent["pipeline"], policy["max_prompts"])
+    # Replies are stored once in results. Recipients reference them by step index;
+    # rendered source blocks are cached, not regenerated for every recipient.
+    results, rendered = [], {}
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    turn_config = dict(agent, tasks=[], remember=False, history=[])
+    turn_config.pop("pipeline")
+    shared_system = initial_messages[0]["content"] + "\nShared task:\n" + initial_messages[-1]["content"]
+    for index, step in enumerate(steps):
+        routing_started = time.monotonic()
+        for source in step["inputs"]:
+            if source not in rendered:
+                rendered[source] = ("[Step %d / %s]\n%s" %
+                                    (source, steps[source]["agent"], results[source]["output"]))
+        handoff = "\n\n".join(rendered[source] for source in step["inputs"])
+        system = shared_system + "\nYour role: " + step["agent"]
+        prompt = step["instruction"] + ("\nProvided outputs:\n" + handoff if handoff else "")
+        if policy["max_prompt_chars"] is not None and len(system) + len(prompt) > policy["max_prompt_chars"]:
+            raise ValueError("Pipeline prompt exceeds configured max_prompt_chars")
+        handoff_chars, handoff_bytes = len(handoff), len(handoff.encode("utf-8"))
+        routing_seconds = time.monotonic() - routing_started
+        response = run_agent(turn_config, [{"role": "system", "content": system},
+                                          {"role": "user", "content": prompt}], inference_config)
+        item = response["results"][0]
+        item.update(agent_id=step["agent"], step_index=index, input_steps=step["inputs"],
+                    handoff_chars=handoff_chars, handoff_bytes=handoff_bytes)
+        if item["timings"] is not None:
+            item["timings"]["routing_seconds"] = routing_seconds
+            item["timings"]["total_seconds"] += routing_seconds
+        results.append(item)
+        for name in usage:
+            usage[name] += response["usage"][name]
+    return {"results": results, "usage": usage, "history": []}
+
 started = time.monotonic()
 cpu_started = time.process_time()
 job_id = os.environ["JOB_ID"]
@@ -395,7 +455,9 @@ result = {
 
 try:
     if "agent" in config:
-        result["agent"] = (run_discussion if "discussion" in config["agent"] else run_agent)(
+        operation = (run_pipeline if "pipeline" in config["agent"] else
+                     run_discussion if "discussion" in config["agent"] else run_agent)
+        result["agent"] = operation(
             config["agent"], messages, config)
         result["output"] = result["agent"]["results"][-1]["output"]
         result["usage"] = result["agent"]["usage"]
