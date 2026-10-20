@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ runner.arch }}-python311-llama-cpp-v4
+          key: venv-${{ runner.os }}-${{ runner.arch }}-python311-llama-cpp-0.3.36-v5
 
       - name: Cache model weights
         if: ${{ inputs.backend == 'local' && fromJSON(inputs.config).cache_weights }}
@@ -46,7 +46,7 @@ jobs:
         if: ${{ inputs.backend == 'local' && steps.cache-venv.outputs.cache-hit != 'true' }}
         run: |
           python -m venv .venv
-          .venv/bin/pip install --only-binary=llama-cpp-python             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu             'llama-cpp-python>=0.3.16' -q ||             CMAKE_ARGS="-DGGML_METAL=off" .venv/bin/pip install 'llama-cpp-python>=0.3.16' -q
+          .venv/bin/pip install --only-binary=llama-cpp-python             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu             'llama-cpp-python==0.3.36' -q ||             CMAKE_ARGS="-DGGML_METAL=off" .venv/bin/pip install 'llama-cpp-python==0.3.36' -q
 
       - name: Run inference on GitHub
         env:
