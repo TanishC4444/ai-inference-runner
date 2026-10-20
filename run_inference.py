@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import importlib.metadata
 import platform
 import resource
 import shutil
@@ -38,7 +39,12 @@ def resource_snapshot(started):
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     if platform.system() != "Darwin":
         peak *= 1024
+    try:
+        runtime_version = importlib.metadata.version("llama-cpp-python")
+    except importlib.metadata.PackageNotFoundError:
+        runtime_version = "unavailable"
     return {
+        "runtime_version": runtime_version,
         "cpu_count": os.cpu_count() or 1,
         "memory_total_bytes": memory.get("MemTotal", 0),
         "memory_available_bytes": memory.get("MemAvailable", 0),
@@ -159,8 +165,15 @@ def get_local_model(local_model, requested_n_ctx):
         import llama_cpp
         options["rope_scaling_type"] = getattr(
             llama_cpp, "LLAMA_ROPE_SCALING_TYPE_" + options["rope_scaling_type"].upper())
+    template_options = options.pop("chat_template_options", None)
     llm = Llama(model_path=model_path, n_ctx=n_ctx,
                 n_gpu_layers=0, use_mmap=False, use_mlock=True, **options)
+    if template_options is not None:
+        from functools import partial
+        handler = llm._chat_handlers.get("chat_template.default")
+        if handler is None:
+            raise ValueError("chat_template_options requires an embedded default chat template")
+        llm.chat_handler = partial(handler, **template_options)
     _LOADED_MODELS[key] = llm
     _MODEL_STATS[key] = {
         "weights_cached": cached_weights,
@@ -387,8 +400,11 @@ def run_pipeline(agent, initial_messages, inference_config):
                 rendered[source] = ("[Step %d / %s]\n%s" %
                                     (source, steps[source]["agent"], results[source]["output"]))
         handoff = "\n\n".join(rendered[source] for source in step["inputs"])
-        system = shared_system + "\nYour role: " + step["agent"]
-        prompt = step["instruction"] + ("\nProvided outputs:\n" + handoff if handoff else "")
+        # Keep common source text ahead of varying role/instruction text so
+        # broadcast recipients can reuse the same computed prompt prefix.
+        system = shared_system
+        prompt = (("Provided outputs:\n" + handoff + "\n\n") if handoff else "")
+        prompt += "Your role: " + step["agent"] + "\n" + step["instruction"]
         if policy["max_prompt_chars"] is not None and len(system) + len(prompt) > policy["max_prompt_chars"]:
             raise ValueError("Pipeline prompt exceeds configured max_prompt_chars")
         handoff_chars, handoff_bytes = len(handoff), len(handoff.encode("utf-8"))
